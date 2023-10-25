@@ -1,15 +1,15 @@
 """Commands for browsing a website"""
 
-from __future__ import annotations
+# poetry add webdriver-manager
 
-COMMAND_CATEGORY = "web_browse"
-COMMAND_CATEGORY_TITLE = "Web Browsing"
+from __future__ import annotations
 
 import logging
 import re
 from pathlib import Path
 from sys import platform
-from typing import TYPE_CHECKING, Optional, Type, List, Tuple
+# from typing import TYPE_CHECKING, Optional
+from typing import Type, List, Tuple, Any, Callable
 
 from bs4 import BeautifulSoup
 from selenium.common.exceptions import WebDriverException
@@ -33,19 +33,17 @@ from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
 from webdriver_manager.microsoft import EdgeChromiumDriverManager as EdgeDriverManager
 
-
 from ..registry import ability
-from forge.sdk.errors import *
+# from forge.sdk.errors import *
+from forge.sdk.errors import CommandExecutionError
 import functools
-import re
-from typing import Any, Callable
 from urllib.parse import urljoin, urlparse
 
-from requests.compat import urljoin
+# from requests.compat import urljoin
 
 
-from bs4 import BeautifulSoup
-from requests.compat import urljoin
+COMMAND_CATEGORY = "web_browse"
+COMMAND_CATEGORY_TITLE = "Web Browsing"
 
 
 def extract_hyperlinks(soup: BeautifulSoup, base_url: str) -> list[tuple[str, str]]:
@@ -76,14 +74,14 @@ def format_hyperlinks(hyperlinks: list[tuple[str, str]]) -> list[str]:
     return [f"{link_text} ({link_url})" for link_text, link_url in hyperlinks]
 
 
-
 def validate_url(func: Callable[..., Any]) -> Any:
-    """The method decorator validate_url is used to validate urls for any command that requires
-    a url as an argument"""
+    """The method decorator validate_url is used to validate urls for
+    any command that requires a url as an argument"""
 
     @functools.wraps(func)
     def wrapper(url: str, *args, **kwargs) -> Any:
-        """Check if the URL is valid using a basic check, urllib check, and local file check
+        """Check if the URL is valid using a basic check,
+           urllib check, and local file check
 
         Args:
             url (str): The URL to check
@@ -178,8 +176,6 @@ def check_local_file_access(url: str) -> bool:
     return any(url.startswith(prefix) for prefix in local_prefixes)
 
 
-
-
 logger = logging.getLogger(__name__)
 
 FILE_DIR = Path(__file__).parent.parent
@@ -193,7 +189,9 @@ class BrowsingError(CommandExecutionError):
 
 @ability(
     name="read_webpage",
-    description="Read a webpage, and extract specific information from it if a question is specified. If you are looking to extract specific information from the webpage, you should specify a question.",
+    description="Read a webpage, and extract specific information from it if" +
+    " a question is specified. If you are looking to extract specific" +
+    " information from the webpage, you should specify a question.",
     parameters=[
         {
             "name": "url",
@@ -201,9 +199,10 @@ class BrowsingError(CommandExecutionError):
             "type": "string",
             "required": True,
         },
-                {
+        {
             "name": "question",
-            "description": "A question that you want to answer using the content of the webpage.",
+            "description": "A question that you want to answer using" +
+            " the content of the webpage.",
             "type": "string",
             "required": False,
         }
@@ -211,7 +210,9 @@ class BrowsingError(CommandExecutionError):
     output_type="string",
 )
 @validate_url
-async def read_webpage(agent, task_id: str, url: str, question: str = "") -> Tuple(str, List[str]):
+async def read_webpage(
+    agent, task_id: str, url: str, question: str = ""
+) -> Tuple(str, List[str]):
     """Browse a website and return the answer and links to the user
 
     Args:
@@ -242,7 +243,7 @@ async def read_webpage(agent, task_id: str, url: str, question: str = "") -> Tup
         msg = e.msg.split("\n")[0]
         if "net::" in msg:
             raise BrowsingError(
-                f"A networking error occurred while trying to load the page: "
+                "A networking error occurred while trying to load the page: "
                 + re.sub(r"^unknown error: ", "", msg)
             )
         raise CommandExecutionError(msg)
@@ -317,7 +318,9 @@ def open_page_in_browser(url: str) -> WebDriver:
 
     options: BrowserOptions = options_available[selenium_web_browser]()
     options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.5615.49 Safari/537.36"
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/112.0.5615.49 Safari/537.36"
     )
 
     if selenium_web_browser == "firefox":
@@ -333,7 +336,8 @@ def open_page_in_browser(url: str) -> WebDriver:
         )
     elif selenium_web_browser == "safari":
         # Requires a bit more setup on the users end
-        # See https://developer.apple.com/documentation/webkit/testing_with_webdriver_in_safari
+        # See https://developer.apple.com/documentation/webkit/
+        # testing_with_webdriver_in_safari
         driver = SafariDriver(options=options)
     else:
         if platform == "linux" or platform == "linux2":
@@ -372,4 +376,3 @@ def close_browser(driver: WebDriver) -> None:
         None
     """
     driver.quit()
-

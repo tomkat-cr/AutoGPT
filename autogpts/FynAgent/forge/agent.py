@@ -1,3 +1,10 @@
+"""
+Agent main code
+"""
+import os
+import json
+import pprint
+
 from forge.sdk import (
     Agent,
     AgentDB,
@@ -6,13 +13,11 @@ from forge.sdk import (
     StepRequestBody,
     Task,
     TaskRequestBody,
-    Workspace,    
-    PromptEngine,	
-    chat_completion_request,	
-    ChromaMemStore	
+    Workspace,
+    PromptEngine,
+    chat_completion_request,
+    ChromaMemStore,
 )
-import json	
-import pprint
 
 LOG = ForgeLogger(__name__)
 
@@ -122,13 +127,99 @@ class ForgeAgent(Agent):
         multiple steps. Returning a request to continue in the step output, the user can then decide
         if they want the agent to continue or not.
         """
-        # An example that
+        task = await self.db.get_task(task_id)
+
         step = await self.db.create_step(
             task_id=task_id, input=step_request, is_last=True
         )
 
-        self.workspace.write(task_id=task_id, path="output.txt", data=b"Washington D.C")
+        LOG.info("\t✅ >> Step started: %s | Task: %s | Request: %s",
+                 step.step_id, task_id, step_request)
 
+        if os.getenv("DEFAULT_LLM_MODEL", "fast") == "fast":
+            gpt_model = os.getenv("FAST_LLM_MODEL")
+        else:
+            gpt_model = os.getenv("SMART_LLM_MODEL")
+
+        # Initialize the PromptEngine with the selected model
+        prompt_engine = PromptEngine(gpt_model)
+
+        # Load the system and task prompts
+        system_prompt = prompt_engine.load_prompt("system-format")
+
+        # Initialize the messages list with the system prompt
+        messages = [
+            {"role": "system", "content": system_prompt},
+        ]
+
+        # Define the task parameters
+        task_kwargs = {
+            "task": task.input,
+            "abilities": self.abilities.list_abilities_for_prompt(),
+        }
+
+        # Load the task prompt with the defined task parameters
+        task_prompt = prompt_engine.load_prompt("task-step", **task_kwargs)
+
+        # Log the chat_response for debugging purposes
+        LOG.info("task_prompt:")
+        LOG.info(pprint.pformat(task_prompt))
+
+        # Append the task prompt to the messages list
+        messages.append({"role": "user", "content": task_prompt})
+
+        error_msg = None
+        try:
+            # Define the parameters for the chat completion request
+            chat_completion_kwargs = {
+                "messages": messages,
+                "model": gpt_model,
+            }
+            # Make the chat completion request and parse the response
+            chat_response = await chat_completion_request(**chat_completion_kwargs)
+
+            # Log the chat_response for debugging purposes
+            LOG.info("chat_response:")
+            LOG.info(pprint.pformat(chat_response))
+
+            answer = json.loads(chat_response["choices"][0]["message"]["content"])
+
+            # Log the answer for debugging purposes
+            LOG.info("Answer:")
+            LOG.info(pprint.pformat(answer))
+        except json.JSONDecodeError:
+            # Handle JSON decoding errors
+            error_msg = f"Unable to decode chat response: {chat_response}"
+        except Exception as e:
+            # Handle other exceptions
+            error_msg = f"Unable to generate chat response: {e}"
+
+        if error_msg:
+            step.output = error_msg
+            LOG.error("\t>>> ERROR <<< Step not completed: %s", error_msg)
+            return step
+
+        # Extract the ability from the answer
+        output = answer
+        if isinstance(answer, dict) and "ability" in answer:
+            ability = answer["ability"]
+            # Run the ability and get the output
+            output = await self.abilities.run_ability(
+                task_id, ability["name"], **ability["args"]
+            )
+            LOG.error("Ability [%s], with agrs [%s], response: %s",
+                      ability["name"],
+                      pprint.pformat(ability["args"]),
+                      pprint.pformat(output))
+
+            # Handle specific ability's output
+            # if ability["name"] == "":
+            #     pass
+
+        step.output = output
+
+        self.workspace.write(task_id=task_id, path="output.txt",
+                             data=bytes(str(step.output), 'UTF8'))
         await self.db.create_artifact(
             task_id=task_id,
             step_id=step.step_id,
@@ -137,11 +228,7 @@ class ForgeAgent(Agent):
             agent_created=True,
         )
 
-        step.output = "Washington D.C"
-
-        LOG.info(f"\t✅ Final Step completed: {step.step_id}. \n" +
-                 f"Output should be placeholder text Washington D.C. You'll need to \n" +
-                 f"modify execute_step to include LLM behavior. Follow the tutorial " +
-                 f"if confused. ")
+        LOG.info("\t✅ >> Final Step completed: %s", step.step_id)
 
         return step
+
